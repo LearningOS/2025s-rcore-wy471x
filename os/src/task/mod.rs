@@ -15,6 +15,7 @@ mod switch;
 mod task;
 
 use crate::config::MAX_APP_NUM;
+use crate::config::SYSCALL_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
 use lazy_static::*;
@@ -45,6 +46,8 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+    // count of system call for each task
+    syscall_count: [[isize; SYSCALL_NUM]; MAX_APP_NUM],
 }
 
 lazy_static! {
@@ -65,6 +68,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    syscall_count: [[0; SYSCALL_NUM]; MAX_APP_NUM],
                 })
             },
         }
@@ -135,6 +139,26 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn incr_syscall_count(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        if syscall_id < SYSCALL_NUM {
+            inner.syscall_count[current][syscall_id] += 1;
+        } else {
+            panic!("Invalid syscall_id: {}", syscall_id);
+        }
+    }
+
+    fn get_syscall_count(&self, syscall_id: usize) -> isize {
+        let inner = self.inner.exclusive_access();
+        if syscall_id < SYSCALL_NUM {
+            inner.syscall_count[inner.current_task][syscall_id]
+        } else {
+            panic!("Invalid syscall_id: {}", syscall_id);
+        }
+    }
+
 }
 
 /// Run the first task in task list.
@@ -168,4 +192,14 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// increment syscall count for current task
+pub fn incr_syscall_count(syscall_id: usize) {
+    TASK_MANAGER.incr_syscall_count(syscall_id);
+}
+
+/// get syscall count for current task
+pub fn get_syscall_count(syscall_id: usize) -> isize {
+    TASK_MANAGER.get_syscall_count(syscall_id)
 }
