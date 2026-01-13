@@ -30,9 +30,33 @@ mod process;
 
 use fs::*;
 use process::*;
+use lazy_static::lazy_static;
+use crate::sync::UPSafeCell;
+
+lazy_static! {
+    static ref SYSCALL_COUNTER: UPSafeCell<[usize; 512]> = unsafe { UPSafeCell::new([0; 512]) };
+}
+
+/// Return the syscall invocation count for the given syscall `id`.
+///
+/// Returns 0 when `id` is out of range.
+pub fn get_syscall_count(id: usize) -> usize {
+    if id < 512 {
+        let counter = SYSCALL_COUNTER.exclusive_access();
+        counter[id]
+    } else {
+        0
+    }
+}
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
+    // increment syscall counter for current process
+    if syscall_id < 512 {
+        let mut counter = SYSCALL_COUNTER.exclusive_access();
+        counter[syscall_id] += 1;
+    }
+
     match syscall_id {
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),
